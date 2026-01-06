@@ -1,0 +1,157 @@
+﻿@using AIChatBot.Data.Models
+@model List<ChatVisitor>
+
+<div class="container-fluid d-flex p-0" style="height:92vh;">
+    <!-- Sidebar -->
+    <div id="sessionList" class="border-end p-3 bg-light" style="width: 280px; overflow-y: auto;">
+        <h5>Active Chats</h5>
+        <ul class="list-group" id="sessionListContainer">
+            @foreach (var visitor in Model)
+            {
+                <li class="list-group-item list-group-item-action session-item"
+                    data-sessionid="@visitor.SessionId"
+                    data-username="@visitor.Name"
+                    id="session-@visitor.SessionId">
+                    <strong>@visitor.Name</strong><br />
+                    <small>@visitor.Email</small>
+                </li>
+            }
+        </ul>
+    </div>
+
+    <!-- Chat Panel -->
+    <div class="flex-grow-1 d-flex flex-column">
+        <div class="border-bottom p-3 bg-white">
+            <h5 id="chatHeader" class="mb-0">Select a session</h5>
+        </div>
+
+        <div id="chatContent" class="flex-grow-1 overflow-auto px-3 py-2" style="position:relative; min-height: 0;">
+            <!-- Dynamic chat boxes per session will be added here -->
+        </div>
+
+        <form id="adminChatForm" class="p-2 border-top" style="display:none;">
+            <div class="input-group">
+                <input id="adminInput" class="form-control" placeholder="Type your message..." autocomplete="off" />
+                <button type="submit" class="btn btn-primary">Send</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<audio id="notificationSound" src="/audio/notify.mp3" preload="auto"></audio>
+
+@section Scripts {
+    <script>
+        let selectedSessionId = null;
+        let selectedUserName = null;
+        const chatBoxes = {};
+
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/chathub?role=admin")
+            .build();
+
+        function ensureChatBox(sessionId) {
+            if (!chatBoxes[sessionId]) {
+                const chatDiv = $('<div>').attr('id', `chatBox-${sessionId}`)
+                                          .addClass('chat-box d-flex flex-column gap-2')
+                                          .css({ display: 'none', height: '100%' });
+                $('#chatContent').append(chatDiv);
+                chatBoxes[sessionId] = chatDiv;
+            }
+        }
+        function scrollToBottom(sessionId) {
+            const sessionBox = document.getElementById(`chatBox-${sessionId}`);
+            if (sessionBox) sessionBox.scrollTop = sessionBox.scrollHeight;
+
+            const chatContent = document.getElementById("chatContent");
+            if (chatContent) chatContent.scrollTop = chatContent.scrollHeight;
+        }
+
+        function appendMessage(sessionId, sender, message, timestamp, isAdmin = false) {
+            ensureChatBox(sessionId);
+            const chatBox = chatBoxes[sessionId];
+            const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            const wrapper = $('<div>').addClass('chat-box-wrapper d-flex justify-content-' + (isAdmin ? 'end' : 'start'));
+            const bubble = $('<div>').addClass('chat-message shadow-sm ' + (isAdmin ? 'user-message' : 'bot-message'));
+            bubble.html(`<small class="text-muted">${sender} • ${time}</small><br>${message}`);
+            wrapper.append(bubble);
+            chatBox.append(wrapper);
+
+            if (selectedSessionId === sessionId) scrollToBottom(sessionId);
+        }
+
+        function displayMessages(sessionId, messages) {
+            ensureChatBox(sessionId);
+            const chatBox = chatBoxes[sessionId];
+            chatBox.empty();
+
+            messages.forEach(msg => {
+                appendMessage(sessionId, msg.sender, msg.message, msg.timestamp, msg.sender === "Admin");
+            });
+        }
+
+        connection.on("NewUserMessage", function (sessionId, sender, message, timestamp) {
+            appendMessage(sessionId, sender, message, timestamp, false);
+
+            if (selectedSessionId !== sessionId) {
+                const $target = $(`#session-${sessionId}`);
+                $target.addClass("bg-warning");
+
+                const badge = $target.find('.badge');
+                if (badge.length) {
+                    badge.text(parseInt(badge.text()) + 1);
+                } else {
+                    $target.append('<span class="badge bg-danger ms-2">1</span>');
+                }
+            }
+
+            document.getElementById("notificationSound").play();
+        });
+
+        connection.on("AdminReceiveMessage", function (sessionId, sender, message, timestamp) {
+            appendMessage(sessionId, sender, message, timestamp, true);
+        });
+
+        connection.start();
+
+        $('.session-item').on('click', function () {
+            $('.session-item').removeClass("active bg-primary text-white");
+            $(this).addClass("active bg-primary text-white");
+
+            selectedSessionId = $(this).data('sessionid');
+            selectedUserName = $(this).data('username');
+
+            $('#chatHeader').text("Chat with " + selectedUserName);
+            $('#adminChatForm').show();
+
+            $(".chat-box").hide();
+            ensureChatBox(selectedSessionId);
+            chatBoxes[selectedSessionId].show();
+
+            $(this).removeClass("bg-warning");
+            $(this).find('.badge').remove();
+
+            $.post('/Admin/MarkAsRead', { sessionId: selectedSessionId });
+
+            $.get('/Admin/GetChatMessages', { sessionId: selectedSessionId }, function (messages) {
+                displayMessages(selectedSessionId, messages);
+                scrollToBottom(selectedSessionId);
+            });
+        });
+
+        $('#adminChatForm').on('submit', function (e) {
+            e.preventDefault();
+            const message = $('#adminInput').val().trim();
+            if (!message || !selectedSessionId) return;
+
+            $.post('/Admin/SendAdminMessage', {
+                sessionId: selectedSessionId,
+                message
+            }, function () {
+                $('#adminInput').val('');
+            });
+        });
+    </script>
+}
+

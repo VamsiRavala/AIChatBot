@@ -1,0 +1,433 @@
+﻿@model AIChatBot.Models.ChatViewModel
+@{
+    ViewData["Title"] = "HR ChatBot";
+}
+<div id="chatContainer" class="container-fluid d-flex flex-column justify-content-center align-items-center">
+    <div id="preChatForm" class="text-center p-4">
+
+        <h2 class="fw-bold">Start a conversation 👋</h2>
+        <form id="userDetailsForm" class="w-100" style="max-width: 400px;">
+            <input id="userName" class="form-control mb-2" placeholder="Your Name" required />
+            <input id="userEmail" class="form-control mb-2" type="email" placeholder="Your Email" required />
+            <input id="userPhone" class="form-control mb-2" placeholder="Your Mobile" required />
+            <textarea id="initialMessage" class="form-control mb-2" placeholder="Your message..." required></textarea>
+            <button type="submit" class="btn btn-primary px-4">Start Chat</button>
+        </form>
+    </div>
+
+    <!-- Chat Interface (Hidden initially) -->
+    <div id="chatInterface" class="card shadow w-100 flex-column" style="display: none; height: 100%;">
+        <select id="categoryFilter" class="form-select m-2" style="max-width: 200px;display:none;">
+            <option value="">All Categories</option>
+            <option value="Leave">Leave</option>
+            <option value="Payroll">Payroll</option>
+            <option value="Benefits">Benefits</option>
+        </select>
+
+        <div id="chatContent" class="flex-grow-1 overflow-auto px-3 py-2" style="min-height: 0;">
+            <div id="chatBox" class="d-flex flex-column gap-2"></div>
+            <div id="typingIndicator" class="text-muted typing" style="display:none;">Bot is typing...</div>
+        </div>
+
+        <!-- Mode selector and Intent suggestions (single-line, responsive) -->
+        <div id="modeAndSuggestions" class="px-2 pt-2 d-flex align-items-center flex-wrap gap-2">
+            <label for="modeSelect" class="form-label mb-0 text-muted me-2">Mode:</label>
+
+            <select id="modeSelect" name="mode" class="form-select form-select-sm" style="max-width: 220px;">
+                <option value="Auto" selected>Auto (use intent detector)</option>
+                <option value="Question">Question (search/FAQ)</option>
+                <option value="Sentiment">Sentiment (analyze mood)</option>
+                <option value="Recommendation">Recommendation (suggestions)</option>
+                <option value="Forecast">Forecast (predictions)</option>
+            </select>
+
+            <!-- "Try examples" label: hide on very small screens to save space -->
+            <small class="text-muted ms-3 d-none d-sm-inline">Try examples:</small>
+
+            <div id="intentSuggestions" class="d-flex gap-2 flex-wrap align-items-center">
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary suggestion-chip"
+                        data-bs-toggle="tooltip"
+                        data-mode="Question"
+                        title="Example question — insert into input"
+                        data-example="How do I apply for leave?"
+                        aria-label="Question example: How do I apply for leave?">
+                    Question
+                    <span class="ms-2 badge bg-light text-dark">How do I apply for leave?</span>
+                </button>
+
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary suggestion-chip"
+                        data-bs-toggle="tooltip"
+                        data-mode="Sentiment"
+                        title="Example sentiment — insert into input"
+                        data-example="I feel frustrated with payroll delays."
+                        aria-label="Sentiment example: I feel frustrated with payroll delays.">
+                    Sentiment
+                    <span class="ms-2 badge bg-light text-dark">I feel frustrated...</span>
+                </button>
+
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary suggestion-chip"
+                        data-bs-toggle="tooltip"
+                        data-mode="Recommendation"
+                        title="Example recommendation — insert into input"
+                        data-example="Can you recommend the best health insurance plan?"
+                        aria-label="Recommendation example: Can you recommend the best health insurance plan?">
+                    Recommendation
+                    <span class="ms-2 badge bg-light text-dark">Recommend a plan</span>
+                </button>
+
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary suggestion-chip"
+                        data-bs-toggle="tooltip"
+                        data-mode="Forecast"
+                        title="Example forecast — insert into input"
+                        data-example="Can you predict next quarter's headcount?"
+                        aria-label="Forecast example: Can you predict next quarter's headcount?">
+                    Forecast
+                    <span class="ms-2 badge bg-light text-dark">Predict headcount</span>
+                </button>
+            </div>
+        </div>
+
+        <form id="chatForm" class="p-2 border-top">
+            <div class="input-group">
+                <input name="userInput" class="form-control" placeholder="Type your question..." autocomplete="off" />
+                <button type="submit" class="btn btn-primary">Send</button>
+                <label class="btn btn-outline-secondary mb-0 ms-2" for="fileInput" title="Attach file">
+                    F<i class="bi bi-paperclip"></i>
+                </label>
+                <input type="file" id="fileInput" style="display:none;" />
+            </div>
+        </form>
+        <input type="hidden" id="sessionIdField" name="sessionId" />
+    </div>
+</div>
+
+
+@section Scripts {
+    <script>
+                     function getOrCreateSessionId() {
+            let sessionId = localStorage.getItem("chatSessionId");
+            if (!sessionId) {
+                sessionId = crypto.randomUUID();
+                localStorage.setItem("chatSessionId", sessionId);
+            }
+            return sessionId;
+        }
+
+            const sessionId = getOrCreateSessionId();
+        $('#sessionIdField').val(sessionId);
+
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl(`/chathub?sessionId=${sessionId}`)
+            .build();
+        const chatBox = $('#chatBox');
+        const typingIndicator = $('#typingIndicator');
+        let awaitingExitDecision = false;
+        let foodRating = null;
+                let lastUserMessage = "";
+                let userName = "You"; // Will be updated from form
+        let shouldPromptExit = false;
+        function startChat() {
+            document.getElementById("welcomeScreen").style.display = "none";
+            const chat = document.getElementById("chatInterface");
+            chat.style.display = "flex";
+            chat.style.height = "90vh";
+            appendBotMessage("Hello! 👋 How can I help you today?");
+        }
+                      $('#userDetailsForm').on('submit', function (e) {
+            e.preventDefault();
+
+            const name = $('#userName').val().trim();
+            const email = $('#userEmail').val().trim();
+            const phone = $('#userPhone').val().trim();
+            const message = $('#initialMessage').val().trim();
+
+            if (!name || !email || !phone || !message) return;
+
+            userName = name;
+            $('#sessionIdField').val(sessionId);
+
+            $.post('/Home/RegisterVisitor', {
+                sessionId, name, email, phone, message
+            }, () => {
+                $('#preChatForm').hide();
+                $('#chatInterface').show();
+                $('#chatInterface').css('height', '90vh');
+                // appendUserMessage(message);
+                // include selected mode on initial message send
+                const selectedMode = $('#modeSelect').val();
+                $.post('/Home/Index', { userInput: message, sessionId, mode: selectedMode });
+            });
+        });
+        function scrollToBottom() {
+            const chatContent = document.getElementById("chatContent");
+            chatContent.scrollTop = chatContent.scrollHeight;
+        }
+
+        function appendBotMessage(message) {
+            const wrapper = $('<div>').addClass('chat-box-wrapper d-flex justify-content-start');
+            const bubble = $('<div>').addClass('chat-message shadow-sm bot-message');
+            bubble.html(`<small class="text-muted">Bot</small><br>${message}`);
+            wrapper.append(bubble);
+            chatBox.append(wrapper);
+            scrollToBottom();
+        }
+
+          function appendUserMessage(message) {
+            lastUserMessage = message.trim().toLowerCase();
+
+            const wrapper = $('<div>').addClass('chat-box-wrapper d-flex justify-content-end');
+            const bubble = $('<div>').addClass('chat-message shadow-sm user-message');
+            // bubble.html(`<small class="text-muted">You</small><br>${message}`);
+            bubble.html(`<small class="text-muted">${userName}</small><br>${message}`);
+            wrapper.append(bubble);
+            chatBox.append(wrapper);
+            scrollToBottom();
+
+
+        }
+
+        function showContinueExitOptions() {
+            awaitingExitDecision = true;
+            const wrapper = $('<div>').addClass('d-flex justify-content-center gap-2 mt-2');
+
+            const continueBtn = $('<button class="btn btn-outline-secondary">Continue</button>');
+            const exitBtn = $('<button class="btn btn-outline-danger">Exit</button>');
+
+            continueBtn.on('click', () => {
+                appendUserMessage("Continue");
+                awaitingExitDecision = false;
+                appendBotMessage("Great! What else would you like to know?");
+            });
+
+            exitBtn.on('click', () => {
+                appendUserMessage("Exit");
+                awaitingExitDecision = false;
+                      $.post('/Home/EndSession', { sessionId: sessionId });
+                      localStorage.removeItem("chatSessionId");
+                startFoodSurvey();
+            });
+
+            wrapper.append(continueBtn).append(exitBtn);
+            chatBox.append(wrapper);
+            scrollToBottom();
+        }
+
+              connection.on("ReceiveMessage", function (user, message) {
+            typingIndicator.hide();
+
+                      const isUser = (user === "You" || user === userName); // Treat both as user messages
+
+        const wrapper = $('<div>').addClass('chat-box-wrapper d-flex ' + (isUser ? 'justify-content-end' : 'justify-content-start'));
+        const bubble = $('<div>').addClass('chat-message shadow-sm ' + (isUser ? 'user-message' : 'bot-message'));
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        bubble.html(`<small class="text-muted">${user} • ${time}</small><br>${message}`);
+        wrapper.append(bubble);
+        chatBox.append(wrapper);
+        scrollToBottom();
+            if(user!="Bot"){
+              const closingWords = ["ok", "okay", "done", "thank you", "thanks", "that's it", "bye"];
+               let lastUserMessage = message.trim().toLowerCase();
+            if (closingWords.includes(lastUserMessage)) {
+                shouldPromptExit = true;
+            }
+            }
+            if (user === "Bot" && shouldPromptExit && !awaitingExitDecision) {
+                shouldPromptExit = false;
+                showContinueExitOptions();
+            }
+        });
+
+        connection.on("ShowTyping", function () {
+            typingIndicator.show();
+            scrollToBottom();
+        });
+
+        connection.start().then(scrollToBottom);
+
+        $('#chatForm').on('submit', function (e) {
+            e.preventDefault();
+
+          if (awaitingExitDecision) awaitingExitDecision = false;
+
+            const input = $('input[name="userInput"]');
+            const text = input.val().trim();
+            if (!text) return;
+
+            const category = $('#categoryFilter').val();
+            const selectedMode = $('#modeSelect').val();
+            $.post('@Url.Action("Index", "Home")', { userInput: text,  category: category, sessionId: $('#sessionIdField').val(), mode: selectedMode }, () => {
+                input.val('');
+            });
+        });
+
+        // File upload handling
+        $('#fileInput').on('change', function (e) {
+            const file = this.files && this.files[0];
+            if (!file) return;
+
+            const fd = new FormData();
+            fd.append('file', file);
+            fd.append('sessionId', sessionId);
+            fd.append('mode', $('#modeSelect').val());
+
+            // Immediately show local preview message
+            appendUserMessage(`<a href="#" class="text-decoration-none">${file.name}</a>`);
+
+            $.ajax({
+                url: '/Home/UploadFile',
+                method: 'POST',
+                data: fd,
+                processData: false,
+                contentType: false,
+                success: function (res) {
+                    // Server will also push messages via SignalR; but update local chat bubble with a link when returned
+                    if (res && res.url) {
+                        // Update the last user message bubble to include the link
+                        const lastBubble = $('#chatBox .chat-box-wrapper').last().find('.chat-message');
+                        lastBubble.append(`<div class="small mt-1"><a href="${res.url}" target="_blank">Open ${file.name}</a></div>`);
+                    }
+                },
+                error: function () {
+                    appendBotMessage('File upload failed. Please try again.');
+                }
+            });
+
+            // clear input for re-use
+            $(this).val('');
+        });
+
+        // Suggestion chip interactions & tooltip init
+        $(function () {
+            // Initialize Bootstrap tooltips if bootstrap is available
+            if (typeof bootstrap !== 'undefined') {
+                var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+                tooltipTriggerList.map(function (tooltipTriggerEl) {
+                    return new bootstrap.Tooltip(tooltipTriggerEl);
+                });
+            }
+
+            // Insert example into input when chip clicked (excluding the send button)
+            $(document).on('click', '.suggestion-chip', function (e) {
+                // If the send button inside chip was clicked, ignore here
+                if ($(e.target).closest('.send-example').length) return;
+                var ex = $(this).data('example') || '';
+                var mode = $(this).data('mode') || 'Auto';
+                $('input[name="userInput"]').val(ex).focus();
+                $('#modeSelect').val(mode); // set chosen mode so server will respect it
+            });
+
+            // Send example immediately
+            $(document).on('click', '.send-example', function (e) {
+                e.stopPropagation();
+                var $chip = $(this).closest('.suggestion-chip');
+                var ex = $chip.data('example') || '';
+                var mode = $chip.data('mode') || 'Auto';
+                $('input[name="userInput"]').val(ex);
+                $('#modeSelect').val(mode);
+                $('#chatForm').submit();
+            });
+        });
+
+        // Feedback Survey
+
+        function startFoodSurvey() {
+            appendBotMessage("We’d love your feedback on your chat! 🍽️<br>Please rate about the bot from 1 (worst) to 5 (excellent):");
+            showRatingButtons();
+        }
+
+        function showRatingButtons() {
+            const wrapper = $('<div>').addClass('text-center rating-wrapper mt-2');
+            for (let i = 1; i <= 5; i++) {
+                const btn = $('<button>')
+                    .addClass('btn btn-outline-primary mx-1')
+                    .text(i + ' ⭐')
+                    .attr('onclick', `submitRating(${i})`);
+                wrapper.append(btn);
+            }
+            chatBox.append(wrapper);
+            scrollToBottom();
+        }
+
+        function submitRating(rating) {
+            foodRating = rating;
+            appendUserMessage(`${rating} ⭐`);
+            appendBotMessage("Thanks! Would you like to leave a comment about the bot?");
+            showCommentInput();
+        }
+
+        function showCommentInput() {
+            const inputWrapper = $(`
+                <div class="comment-input mt-2">
+                    <input type="text" id="foodComment" class="form-control mb-2" placeholder="Type your comment (optional)">
+                    <button class="btn btn-sm btn-primary" onclick="submitComment()">Submit</button>
+                </div>
+            `);
+            chatBox.append(inputWrapper);
+            scrollToBottom();
+        }
+
+        function submitComment() {
+            const comment = $('#foodComment').val();
+            appendUserMessage(comment || "(No comment)");
+
+            $.post('/Home/SubmitFeedback', { rating: foodRating, comment: comment }, function (res) {
+                appendBotMessage(`Thanks for your feedback! 😊<br>Sentiment: <strong>${res.sentiment}</strong>`);
+                foodRating = null;
+
+
+        // ✅ Optional: Fade out chat interface
+        setTimeout(() => {
+            $('#chatInterface').fadeOut('fast', function () {
+                appendBotMessage("Chat session closed. 👋");
+                // You can optionally show a final message screen or redirect here
+            });
+        }, 1500); // give time for user to read sentiment
+            });
+        }
+
+        // Theme + Sidebar (unchanged)
+        function toggleSidebar() {
+            $('#sidebar').toggleClass('collapsed');
+        }
+
+        function toggleTheme() {
+            const current = $('body').attr('data-theme');
+            $('body').attr('data-theme', current === 'light' ? 'dark' : 'light');
+        }
+    </script>
+    <style>
+        /* Small styles for suggestion chips inside this view */
+        .suggestion-chip {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: .5rem;
+            padding: .375rem .6rem;
+            border-radius: .5rem;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+            .suggestion-chip .send-example {
+                padding: .125rem .375rem;
+                margin-left: .25rem;
+                font-size: .85rem;
+                line-height: 1;
+            }
+
+        #intentSuggestions .badge {
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Keep chips aligned nicely next to the select on small widths */
+        #modeAndSuggestions .form-select {
+            min-width: 160px;
+        }
+    </style>
+}

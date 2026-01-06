@@ -1,0 +1,11 @@
+﻿@model AIChatBot.Models.ChatViewModel
+
+@foreach (var msg in Model.Messages)
+{
+    <div class="chat-box-wrapper d-flex @(msg.Sender == "You" ? "justify-content-end" : "justify-content-start")">
+        <div class="chat-message @(msg.Sender == "You" ? "user-message" : "bot-message") shadow-sm">
+            <small class="text-muted">@msg.Sender</small><br />
+            @msg.Message
+        </div>
+    </div>
+}

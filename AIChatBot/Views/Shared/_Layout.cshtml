@@ -1,0 +1,57 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ViewData["Title"] - AI Bot</title>
+    <script type="importmap"></script>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/AIChatBot.styles.css" asp-append-version="true" />
+
+</head>
+<body data-theme="light">
+    <div class="chat-layout">
+
+        <!-- Sidebar -->
+     @*    <div class="sidebar bg-white border-end shadow-sm" id="sidebar">
+            <div class="p-3 border-bottom fw-bold">📚 HR ChatBot</div>
+            <nav class="nav flex-column">
+                <a class="nav-link px-3" href="#"><i class="bi bi-house-door"></i> Home</a>
+                <a class="nav-link px-3" href="#"><i class="bi bi-question-circle"></i> FAQ</a>
+                <a class="nav-link px-3" href="#"><i class="bi bi-gear"></i> Settings</a>
+                <a class="nav-link px-3" href="#"><i class="bi bi-info-circle"></i> About</a>
+            </nav>
+        </div> *@
+        <!-- Main Chat Panel -->
+        <div class="main-area">
+            <!-- Top Navbar -->
+            <div class="chat-header">
+                <div>
+                    @* <button class="btn btn-light btn-sm me-2" onclick="toggleSidebar()">☰</button> *@
+                    ChatBot
+                </div>
+                <div>
+             @*        <button class="btn btn-outline-light btn-sm" onclick="toggleTheme()">🌓</button> *@
+                    <span class="ms-2">Welcome, User</span>
+                    <span><a href="/Admin/AdminChat">Admin</a></span>
+                </div>
+            </div>
+
+
+            @RenderBody()
+        </div>
+    </div>
+    @* 
+    <footer class="border-top footer text-muted">
+        <div class="container">
+            &copy; 2025 - AIChatBot - <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
+        </div>
+    </footer> *@
+    <script src="~/lib/jquery/dist/jquery.min.js"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/lib/signalr/signalr.min.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>
