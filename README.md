@@ -112,22 +112,7 @@ Question	How do I apply for leave?
 Sentiment	I feel frustrated with payroll delays
 Recommendation	Recommend a plan
 Forecast	Predict headcount
-🚀 Future Enhancements
 
-✅ Authentication & Role-based Access
-
-🌐 NLP integration with Azure Cognitive Services
-
-📈 Advanced analytics dashboard
-
-🗣️ Voice-based chatbot
-
-☁️ Cloud deployment (Azure)
-
-🤝 Contributing
-
-Contributions are welcome!
-Please fork the repository and submit a pull request.
 
 📄 License
 
